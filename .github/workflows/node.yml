@@ -1,0 +1,32 @@
+name: IG Group Locker Bot CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run Bot (test mode)
+        env:
+          INSTAGRAM_USERNAME: ${{ secrets.INSTAGRAM_USERNAME }}
+          INSTAGRAM_PASSWORD: ${{ secrets.INSTAGRAM_PASSWORD }}
+          ADMIN_ID: ${{ secrets.ADMIN_ID }}
+        run: |
+          echo "Running Instagram bot in test mode"
+          node index.js
+          
