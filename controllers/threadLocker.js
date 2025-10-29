@@ -1,62 +1,70 @@
-// src/controllers/threadLocker.js
-import fs from "fs-extra";
-import path from "path";
+// controllers/threadLocker.js
+import { logger } from "../utils/logger.js";
 
-// Thread lock file path
-const lockFilePath = path.join("data", "thread_locks.json");
+export class ThreadLocker {
+  constructor(ig) {
+    this.ig = ig;
+    this.lockedThreads = new Set(); // locked group list
+  }
 
-/**
- * Load current thread lock data from file
- */
-export async function loadThreadLocks() {
-  try {
-    if (await fs.pathExists(lockFilePath)) {
-      return await fs.readJson(lockFilePath);
+  lockThread(threadId) {
+    this.lockedThreads.add(threadId);
+    logger.info(`🔒 Thread Locked: ${threadId}`);
+  }
+
+  unlockThread(threadId) {
+    if (this.lockedThreads.has(threadId)) {
+      this.lockedThreads.delete(threadId);
+      logger.info(`✅ Thread Unlocked: ${threadId}`);
     }
-  } catch (err) {
-    console.error("Error reading thread lock file:", err.message);
   }
-  return {};
-}
 
-/**
- * Save thread lock data to file
- */
-export async function saveThreadLocks(locks) {
-  try {
-    await fs.ensureFile(lockFilePath);
-    await fs.writeJson(lockFilePath, locks, { spaces: 2 });
-  } catch (err) {
-    console.error("Error saving thread lock file:", err.message);
+  isLocked(threadId) {
+    return this.lockedThreads.has(threadId);
   }
-}
 
-/**
- * Lock a thread for processing
- * @param {string} threadId
- */
-export async function lockThread(threadId) {
-  const locks = await loadThreadLocks();
-  locks[threadId] = true;
-  await saveThreadLocks(locks);
-}
+  async reAddRemovedUser(threadId, userId) {
+    try {
+      const thread = this.ig.directThread.getById(threadId);
+      await thread.addUser([userId]);
 
-/**
- * Unlock a thread
- * @param {string} threadId
- */
-export async function unlockThread(threadId) {
-  const locks = await loadThreadLocks();
-  delete locks[threadId];
-  await saveThreadLocks(locks);
-}
+      logger.info(`👥 Re-added removed user ${userId} to ${threadId}`);
+    } catch (e) {
+      logger.error(`⚠️ Failed re-add user ${userId}: ${e.message}`);
+    }
+  }
 
-/**
- * Check if thread is locked
- * @param {string} threadId
- * @returns {boolean}
- */
-export async function isThreadLocked(threadId) {
-  const locks = await loadThreadLocks();
-  return !!locks[threadId];
-}
+  async getThreadInfo(threadId) {
+    try {
+      const thread = this.ig.directThread.getById(threadId);
+      const items = await thread.items();
+
+      return {
+        id: threadId,
+        messages: items.length,
+      };
+    } catch (e) {
+      logger.error("[ThreadInfo]", e.message);
+      return null;
+    }
+  }
+
+  async monitorInbox(callback) {
+    setInterval(async () => {
+      try {
+        const inboxFeed = await this.ig.feed.directInbox();
+        const threads = await inboxFeed.items();
+
+        for (const thread of threads) {
+          const threadId = thread.thread_id;
+
+          if (this.isLocked(threadId)) {
+            await callback(thread);
+          }
+        }
+      } catch (e) {
+        logger.error(`[IG-BOT] Error polling inbox: ${e.message}`);
+      }
+    }, 10_000);
+  }
+        }
