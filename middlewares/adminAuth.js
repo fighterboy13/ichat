@@ -1,4 +1,5 @@
+// middlewares/adminAuth.js
 export function isAdmin(userId) {
-  const admin = process.env.ADMIN_ID ? process.env.ADMIN_ID.toString() : null;
-  return admin && admin === userId?.toString();
+  if (!process.env.ADMIN_ID) return false;
+  return String(userId) === String(process.env.ADMIN_ID);
 }
