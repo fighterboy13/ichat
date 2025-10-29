@@ -4,49 +4,42 @@ import path from 'path';
 import { IgApiClient } from 'instagram-private-api';
 import { log } from './utils/logger.js';
 import { loginInstagram } from './controllers/instagramClient.js';
-import { processMessage } from './controllers/messageProcessor.js';
+import { pollInbox } from './controllers/messageProcessor.js';
+import { ThreadLocker } from './controllers/threadLocker.js';
+import { handleMessage } from './controllers/messageProcessor.js';
 
 const SESSION_PATH = process.env.SESSION_PATH || './data/session.json';
+const POLL_INTERVAL = parseInt(process.env.POLL_INTERVAL_MS || '10000', 10);
 
-async function startBot() {
+async function start() {
   const ig = new IgApiClient();
 
   try {
-    log('Starting Instagram Group Locker Bot...');
+    log('Starting IG Group Locker Bot...');
 
     if (await fs.pathExists(SESSION_PATH)) {
       log('Loading saved session...');
       const serialized = await fs.readJson(SESSION_PATH);
       await ig.state.deserialize(serialized);
-      log('Session loaded.');
+      log('Session deserialized.');
     } else {
       await loginInstagram(ig);
     }
 
-    // basic inbox polling loop (simple, not streaming)
-    log('Bot is ready. Starting inbox poll (every 10s).');
-    setInterval(async () => {
-      try {
-        const inboxFeed = ig.feed.directInbox();
-        const inbox = await inboxFeed.items();
-        if (!inbox || !inbox.length) return;
-        for (const thread of inbox) {
-          // fetch recent items/messages for the thread
-          const threadObj = await ig.directThread.show(thread.thread_id);
-          const items = threadObj.items || [];
-          for (const msg of items) {
-            await processMessage(ig, threadObj, msg);
-          }
-        }
-      } catch (err) {
-        log('Error polling inbox:', err.message);
-      }
-    }, 10000);
+    // prepare locker + start poll loop
+    const locker = new ThreadLocker(ig);
+
+    log('Bot is ready. Starting inbox poll every', POLL_INTERVAL, 'ms');
+
+    // initial poll immediately, then interval
+    await pollInbox(ig, locker, handleMessage);
+    setInterval(() => pollInbox(ig, locker, handleMessage), POLL_INTERVAL);
+
   } catch (err) {
-    console.error(err);
-    log('❌ Error starting bot:', err.message);
+    log('Fatal error starting bot:', err.message || err);
     process.exit(1);
   }
 }
 
-startBot();
+start();
+        
