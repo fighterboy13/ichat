@@ -1,37 +1,23 @@
-import { lockThread, unlockThread } from './threadLocker.js';
-import { sendWelcome } from './welcomeHandler.js';
-import { log } from '../utils/logger.js';
+// controllers/messageProcessor.js
+import { logger } from "../utils/logger.js";
 
-export async function processMessage(ig, thread, msg) {
+export async function pollInbox(ig, handler) {
   try {
-    const text = (msg.text || '').toString().trim();
-    if (!text) return;
+    const inbox = await ig.feed.directInbox().items();
 
-    const lower = text.toLowerCase();
-    log('Message received in thread', thread.thread_id, '->', text);
+    for (const thread of inbox) {
+      const threadId = thread.thread_id;
+      const items = thread.items || [];
 
-    // admin-only commands check (basic)
-    const adminId = process.env.ADMIN_ID ? process.env.ADMIN_ID.toString() : null;
-    const fromUserId = msg.user_id ? msg.user_id.toString() : (msg.user_id || msg.user?.pk || '').toString();
+      for (const msg of items) {
+        if (msg.text) {
+          logger.info(`[MSG] ${msg.user_id}: ${msg.text}`);
 
-    if (lower === '!lock') {
-      if (adminId && adminId !== fromUserId) {
-        log('Non-admin attempted lock:', fromUserId);
-        await ig.directThread.broadcastText(thread.thread_id, 'Only admin can use this command.');
-        return;
+          await handler(threadId, msg.user_id, msg.text);
+        }
       }
-      await lockThread(ig, thread);
-    } else if (lower === '!unlock') {
-      if (adminId && adminId !== fromUserId) {
-        await ig.directThread.broadcastText(thread.thread_id, 'Only admin can use this command.');
-        return;
-      }
-      await unlockThread(ig, thread);
-    } else if (lower.includes('hello') || lower === 'hi' || lower === 'hey') {
-      await sendWelcome(ig, thread, fromUserId);
     }
-
-  } catch (err) {
-    log('processMessage error:', err.message);
+  } catch (e) {
+    logger.error(`[IG-BOT] Inbox error: ${e.message}`);
   }
 }
