@@ -1,15 +1,13 @@
+// controllers/welcomeHandler.js
+import { safeBroadcast } from './threadLocker.js';
 import { log } from '../utils/logger.js';
 
-export async function sendWelcome(ig, thread, userId) {
+export async function sendWelcome(ig, threadId, userId) {
   try {
-    const text = `Welcome! If you are new here, say hi 👋`;
-    if (ig.directThread?.broadcastText) {
-      await ig.directThread.broadcastText(thread.thread_id, text);
-    } else {
-      await ig.entity.directThread(thread.thread_id).broadcastText(text);
-    }
-    log('Sent welcome to', userId, 'in', thread.thread_id);
-  } catch (err) {
-    log('sendWelcome error:', err.message);
+    const msg = process.env.WELCOME_MESSAGE || 'Welcome! 👋';
+    await safeBroadcast(ig, threadId, msg);
+    log('Sent welcome to', userId, 'in', threadId);
+  } catch (e) {
+    log('sendWelcome error:', e.message || e);
   }
 }
